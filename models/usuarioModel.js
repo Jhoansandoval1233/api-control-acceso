@@ -1,5 +1,4 @@
 const db = require('../config/db');
-const bcrypt = require('bcrypt');
 
 const Usuario = {
     getAll: (callback) => {
@@ -17,9 +16,14 @@ const Usuario = {
         db.query(sql, [email.toLowerCase()], callback);
     },
 
-    create: async (data, callback) => {
+    getByDocumento: (numero_documento, callback) => {
+        const sql = 'SELECT * FROM usuarios WHERE numero_documento = ?';
+        db.query(sql, [numero_documento], callback);
+    },
+
+    create: (data, callback) => {
         try {
-            // Validación de campos
+            // Validación de campos obligatorios
             if (!data.email || !data.password || !data.nombre || !data.apellido || !data.numero_documento) {
                 return callback(new Error('Faltan campos requeridos'));
             }
@@ -34,50 +38,51 @@ const Usuario = {
                 return callback(new Error('Rol inválido'));
             }
 
-            // Hash de la contraseña
-            const hashedPassword = await bcrypt.hash(data.password, 10); // 10 salt rounds
+            // Validar si el correo ya existe
+            Usuario.getByEmail(data.email, (err, result) => {
+                if (err) return callback(err);
+                if (result && result.length > 0) return callback(new Error('El correo ya está registrado'));
 
-            const sql = `
-                INSERT INTO usuarios (
-                    email,
-                    password,
-                    rol,
-                    nombre,
-                    apellido,
-                    numero_documento,
-                    telefono
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            `;
+                // Validar si el documento ya existe
+                Usuario.getByDocumento(data.numero_documento, (err2, result2) => {
+                    if (err2) return callback(err2);
+                    if (result2 && result2.length > 0) return callback(new Error('El número de documento ya está registrado'));
 
-            const values = [
-                data.email.toLowerCase(),
-                hashedPassword,
-                data.rol,
-                data.nombre,
-                data.apellido,
-                data.numero_documento,
-                data.telefono || null
-            ];
+                    // Inserta contraseña ya hasheada desde el controller
+                    const sql = `
+                        INSERT INTO usuarios (
+                            email,
+                            password,
+                            rol,
+                            nombre,
+                            apellido,
+                            numero_documento,
+                            telefono,
+                            activo
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    `;
+                    const values = [
+                        data.email.toLowerCase(),
+                        data.password,      // recibe el hash desde el controller
+                        data.rol,
+                        data.nombre,
+                        data.apellido,
+                        data.numero_documento,
+                        data.telefono || null,
+                        1 // activo por defecto
+                    ];
 
-            console.log('Creando usuario con:', {
-                email: data.email,
-                rol: data.rol,
-                nombre: data.nombre,
-                apellido: data.apellido,
-                numero_documento: data.numero_documento,
-                telefono: data.telefono,
-                password: '[HASHED]'
-            });
-
-            db.query(sql, values, (error, results) => {
-                if (error) {
-                    console.error('Error al crear usuario:', error);
-                    return callback(error);
-                }
-                callback(null, results);
+                    db.query(sql, values, (error, results) => {
+                        if (error) {
+                            console.error('Error al crear usuario:', error.sqlMessage || error);
+                            return callback(error);
+                        }
+                        callback(null, results);
+                    });
+                });
             });
         } catch (error) {
-            console.error('Error interno en create:', error);
+            console.error('Error interno en create:', error.message);
             callback(error);
         }
     },
@@ -108,6 +113,7 @@ const Usuario = {
     },
 
     updatePassword: async (userId, newPassword, callback) => {
+        const bcrypt = require('bcrypt');
         try {
             const hashedPassword = await bcrypt.hash(newPassword, 10);
             const sql = 'UPDATE usuarios SET password = ? WHERE id = ?';

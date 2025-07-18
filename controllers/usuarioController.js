@@ -92,30 +92,47 @@ exports.deleteUsuario = (req, res) => {
   });
 };
 
-// Login de usuario
+// Login de usuario con logs de depuración
 exports.login = async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
+    console.log('[LOGIN] Faltan email o password');
     return res.status(400).json({ success: false, message: 'Email y contraseña son requeridos' });
   }
 
+  console.log('[LOGIN] email recibido →', email);
+
   try {
     Usuario.getByEmail(email, async (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: 'Error al verificar credenciales' });
+      if (err) {
+        console.error('[LOGIN] Error al consultar BD:', err);
+        return res.status(500).json({ success: false, message: 'Error al verificar credenciales' });
+      }
+      console.log('[LOGIN] results from DB →', results);
+
       if (!results || results.length === 0) {
+        console.log('[LOGIN] Usuario no encontrado');
         return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
       }
 
       const user = results[0];
+      console.log('[LOGIN] password hash en DB →', user.password);
+
       const isMatch = await bcrypt.compare(password, user.password);
+      console.log('[LOGIN] bcrypt.compare →', isMatch);
 
       if (!isMatch) {
+        console.log('[LOGIN] Contraseña incorrecta');
         return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
       }
 
-      Usuario.updateLastAccess(user.id, () => {}); // no bloqueante
+      // Actualizar último acceso (no bloqueante)
+      Usuario.updateLastAccess(user.id, (updateErr) => {
+        if (updateErr) console.error('[LOGIN] Error updateLastAccess:', updateErr);
+      });
 
+      console.log('[LOGIN] Autenticación exitosa para userId →', user.id);
       res.json({
         success: true,
         message: 'Login exitoso',
@@ -128,10 +145,11 @@ exports.login = async (req, res) => {
       });
     });
   } catch (error) {
-    console.error('Error en login:', error);
+    console.error('[LOGIN] Error inesperado:', error);
     res.status(500).json({ success: false, message: 'Error interno del servidor' });
   }
 };
+
 
 // Registro completo con validación
 exports.registro = async (req, res) => {
