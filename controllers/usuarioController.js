@@ -1,5 +1,6 @@
 const Usuario = require('../models/usuarioModel');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 // Obtener todos los usuarios
 exports.getUsuarios = (req, res) => {
@@ -21,23 +22,51 @@ exports.getUsuarioById = (req, res) => {
 
 // Crear usuario desde endpoint directo (solo email, password, rol)
 exports.createUsuario = async (req, res) => {
-  const { email, password, rol } = req.body;
+  const { 
+    email, 
+    password, 
+    rol,
+    nombre,
+    apellido,
+    telefono,
+    numero_documento 
+  } = req.body;
 
-  if (!email || !password || !rol) {
+  // Validar campos requeridos
+  const camposRequeridos = {
+    email,
+    password,
+    rol,
+    nombre,
+    apellido,
+    numero_documento
+  };
+
+  const camposFaltantes = Object.entries(camposRequeridos)
+    .filter(([_, value]) => !value)
+    .map(([key]) => key);
+
+  if (camposFaltantes.length > 0) {
     return res.status(400).json({
-      error: 'Todos los campos son requeridos',
-      received: { email: !!email, password: !!password, rol: !!rol }
+      error: 'Campos requeridos faltantes',
+      camposFaltantes
     });
   }
 
+  // Validar email
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: 'Formato de email inválido' });
   }
 
+  // Validar rol
   const rolesValidos = ['admin', 'usuario', 'guarda'];
   if (!rolesValidos.includes(rol)) {
-    return res.status(400).json({ error: 'Rol inválido', permitidos: rolesValidos, recibido: rol });
+    return res.status(400).json({ 
+      error: 'Rol inválido', 
+      permitidos: rolesValidos, 
+      recibido: rol 
+    });
   }
 
   try {
@@ -46,14 +75,26 @@ exports.createUsuario = async (req, res) => {
     const nuevoUsuario = {
       email,
       password: hashedPassword,
-      rol
+      rol,
+      nombre,
+      apellido,
+      telefono: telefono || null, // campo opcional
+      numero_documento,
+      activo: 1, // por defecto activo
+      fecha_creacion: new Date(), // fecha actual
+      ultimo_acceso: null // se actualizará en el primer login
     };
 
     Usuario.create(nuevoUsuario, (err, result) => {
       if (err) {
         console.error('Error al crear usuario:', err);
         if (err.code === 'ER_DUP_ENTRY') {
-          return res.status(400).json({ error: 'El email ya está registrado' });
+          if (err.sqlMessage.includes('email')) {
+            return res.status(400).json({ error: 'El email ya está registrado' });
+          }
+          if (err.sqlMessage.includes('numero_documento')) {
+            return res.status(400).json({ error: 'El número de documento ya está registrado' });
+          }
         }
         return res.status(500).json({ error: 'Error al crear el usuario' });
       }
@@ -63,7 +104,11 @@ exports.createUsuario = async (req, res) => {
         id: result.insertId,
         usuario: {
           email,
-          rol
+          rol,
+          nombre,
+          apellido,
+          numero_documento,
+          telefono
         }
       });
     });
@@ -127,6 +172,19 @@ exports.login = async (req, res) => {
         return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
       }
 
+      // Generar token JWT
+      const token = jwt.sign(
+        {
+          userId: user.id,
+          email: user.email,
+          rol: user.rol
+        },
+        process.env.JWT_SECRET || 'tu_clave_secreta_temporal', // Usa una variable de entorno en producción
+        { 
+          expiresIn: '24h' // El token expira en 24 horas
+        }
+      );
+
       // Actualizar último acceso (no bloqueante)
       Usuario.updateLastAccess(user.id, (updateErr) => {
         if (updateErr) console.error('[LOGIN] Error updateLastAccess:', updateErr);
@@ -136,7 +194,7 @@ exports.login = async (req, res) => {
       res.json({
         success: true,
         message: 'Login exitoso',
-        token: 'abc123', // ⚠️ Reemplazar por JWT en producción
+        token,
         user: {
           id: user.id,
           email: user.email,
