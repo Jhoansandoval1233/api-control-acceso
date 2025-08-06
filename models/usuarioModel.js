@@ -112,6 +112,28 @@ const Usuario = {
         db.query(sql, [documento, `%${nombre}%`], callback);
     },
 
+    getByDocumentoNombreCompleto: (numero_documento, nombreCompleto, callback) => {
+        const query = `
+            SELECT * FROM usuarios 
+            WHERE numero_documento = ?
+        `;
+        
+        db.query(query, [String(numero_documento)], (err, results) => {
+            if (err) return callback(err);
+            if (!results || results.length === 0) return callback(null, []);
+
+            const usuario = results[0];
+            const nombreCompletoBD = `${usuario.nombre} ${usuario.apellido}`.trim();
+            
+            // Comparar nombres completos ignorando mayúsculas/minúsculas
+            if (nombreCompletoBD.toLowerCase() === nombreCompleto.toLowerCase()) {
+                callback(null, [usuario]);
+            } else {
+                callback(null, []);
+            }
+        });
+    },
+
     updatePassword: async (userId, newPassword, callback) => {
         const bcrypt = require('bcrypt');
         try {

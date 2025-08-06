@@ -204,32 +204,48 @@ exports.registro = async (req, res) => {
 
 // Restablecer contraseña
 exports.restablecerContrasena = async (req, res) => {
-  const { documento, nombre, nuevaContrasena } = req.body;
+    const { documento: numero_documento, nombre: nombreCompleto, nuevaContrasena } = req.body;
 
-  if (!documento || !nombre || !nuevaContrasena) {
-    return res.status(400).json({ message: 'Todos los campos son requeridos: documento, nombre y nueva contraseña.' });
-  }
+    if (!numero_documento || !nombreCompleto || !nuevaContrasena) {
+        return res.status(400).json({ 
+            message: 'Todos los campos son requeridos: documento, nombre completo y nueva contraseña.' 
+        });
+    }
 
-  try {
-    Usuario.getByDocumentoNombre(documento, nombre, async (err, results) => {
-      if (err) return res.status(500).json({ message: 'Error al buscar usuario en la base de datos' });
-      if (!results || results.length === 0) {
-        return res.status(404).json({ message: 'Usuario no encontrado con los datos proporcionados' });
-      }
+    try {
+        Usuario.getByDocumentoNombreCompleto(numero_documento, nombreCompleto, async (err, results) => {
+            if (err) {
+                console.error('Error en búsqueda:', err);
+                return res.status(500).json({ 
+                    message: 'Error al buscar usuario en la base de datos' 
+                });
+            }
 
-      const usuario = results[0];
-      const hashedPassword = await bcrypt.hash(nuevaContrasena, 10);
+            if (!results || results.length === 0) {
+                return res.status(404).json({ 
+                    message: 'Usuario no encontrado con los datos proporcionados' 
+                });
+            }
 
-      Usuario.updatePassword(usuario.id, hashedPassword, (updateErr) => {
-        if (updateErr) {
-          return res.status(500).json({ message: 'Error al actualizar la contraseña del usuario' });
-        }
+            const usuario = results[0];
+            const hashedPassword = await bcrypt.hash(nuevaContrasena, 10);
 
-        res.json({ message: 'Contraseña restablecida correctamente' });
-      });
-    });
-  } catch (error) {
-    console.error('[RestablecerContraseña] Error inesperado:', error);
-    res.status(500).json({ message: 'Error interno del servidor' });
-  }
+            Usuario.updatePassword(usuario.id, hashedPassword, (updateErr) => {
+                if (updateErr) {
+                    console.error('Error al actualizar contraseña:', updateErr);
+                    return res.status(500).json({ 
+                        message: 'Error al actualizar la contraseña del usuario' 
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Contraseña restablecida correctamente'
+                });
+            });
+        });
+    } catch (error) {
+        console.error('[RestablecerContraseña] Error inesperado:', error);
+        res.status(500).json({ message: 'Error interno del servidor' });
+    }
 };
